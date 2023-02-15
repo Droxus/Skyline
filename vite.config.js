@@ -5,6 +5,9 @@ import { defineConfig } from 'vite'
 // https://vitejs.dev/config/
 export default defineConfig({
   base: '/Skylines/',
+  build: {
+      outDir: './docs'
+  },
   plugins: [],
   resolve: {
     alias: {
