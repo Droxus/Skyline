@@ -92,6 +92,14 @@ function onKeyboard(event: any){
       case 'KeyD':
         playerMove()
         break;
+      case 'Space':
+        makeJump()
+        break;
+      case 'ControlLeft':
+        if (Main.playerModel.scale.y > 0.5){
+          makeDuck()
+        }
+        break;
     }
   }
 }
@@ -101,6 +109,9 @@ function offKeyboard(event: any){
   if (!keys.KeyW && !keys.KeyA && !keys.KeyS && !keys.KeyD){
     clearInterval(makeMoveSmooth)
     Main.playerModel.moving = false
+  }
+  if (event.code == 'ControlLeft'){
+    makeDuck()
   }
 }
 let makeMoveSmooth: any
@@ -127,4 +138,98 @@ function playerMove(){
         Main.playerModel.moving = true
     }, 5)
   }
+}
+function isGrounded(){
+  let downDirection = new THREE.Vector3(0, -1, 0);
+  let raycasterPositions = [], intersects: any[] = []
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x + Main.playerModel.geometry.parameters.depth/2, Main.playerModel.position.y, Main.playerModel.position.z + Main.playerModel.geometry.parameters.width/2 ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x - Main.playerModel.geometry.parameters.depth/2, Main.playerModel.position.y, Main.playerModel.position.z - Main.playerModel.geometry.parameters.width/2 ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x + Main.playerModel.geometry.parameters.depth/2, Main.playerModel.position.y, Main.playerModel.position.z - Main.playerModel.geometry.parameters.width/2 ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x - Main.playerModel.geometry.parameters.depth/2, Main.playerModel.position.y, Main.playerModel.position.z + Main.playerModel.geometry.parameters.width/2 ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x + Main.playerModel.geometry.parameters.depth/2, Main.playerModel.position.y, Main.playerModel.position.z ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x - Main.playerModel.geometry.parameters.depth/2, Main.playerModel.position.y, Main.playerModel.position.z ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x, Main.playerModel.position.y, Main.playerModel.position.z + Main.playerModel.geometry.parameters.width/2 ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x, Main.playerModel.position.y, Main.playerModel.position.z - Main.playerModel.geometry.parameters.width/2 ))
+  raycasterPositions.push(new THREE.Vector3( Main.playerModel.position.x, Main.playerModel.position.y, Main.playerModel.position.z ))
+  const raycaster = new THREE.Raycaster();
+  raycaster.far = Main.playerModel.geometry.parameters.height/2 * Main.playerModel.scale.y + 0.1
+  raycasterPositions.forEach(ray => {
+      raycaster.set(ray, downDirection)
+      intersects.push(raycaster.intersectObjects( Main.scene.children ))
+  })
+  intersects = intersects.flat(1)
+  intersects = intersects.filter(e => e.distance > raycaster.far * 0.85)
+  if (intersects[0]){
+    intersects.sort((a, b) => {
+        if (a.distance > b.distance) return 1
+        if (a.distance < b.distance) return -1
+        return 0
+    })
+    Main.playerModel.position.y += (raycaster.far-0.05) - intersects[0].distance
+    return true
+  }
+  return false
+}
+let isFuseSpamSpace: boolean, velOfJumpIndex: number, smoothlyJump: any
+function makeJump(){
+  if (isGrounded() && !isFuseSpamSpace){
+    isFuseSpamSpace = true
+    velOfJumpIndex = 60
+    setTimeout(() => {
+        isFuseSpamSpace = false
+        clearInterval(smoothlyJump)
+        gravityAttraction()
+    }, 240)
+    smoothlyJump = setInterval(() => {
+        --velOfJumpIndex
+        Main.playerModel.position.y += 0.002 * velOfJumpIndex
+    }, 5)
+}
+}
+let smoothDucking: number | undefined
+function makeDuck(){
+  console.log(1)
+  clearInterval(smoothDucking)
+  if (Main.playerModel.scale.y > 0.5){
+      smoothDucking = setInterval(() => {
+          if (Main.playerModel.scale.y > 0.5){
+              Main.playerModel.scale.y -=  1/50
+              Main.playerModel.position.y -= Main.playerModel.geometry.parameters.depth / 50
+          } else {
+              Main.playerModel.scale.y = 0.5
+              clearInterval(smoothDucking)
+          }
+      }, 5)
+  } else {
+      smoothDucking = setInterval(() => {
+          if (Main.playerModel.scale.y < 1){
+              Main.playerModel.scale.y += 1/50
+              Main.playerModel.position.y += Main.playerModel.geometry.parameters.depth / 50
+          } else {
+              Main.playerModel.scale.y = 1
+              clearInterval(smoothDucking)
+          }
+      }, 5)
+  }
+}
+let smoothGravityAttraction: number | undefined, velOfGravityAttractionIndex: number, isGravityAttractioning: boolean
+function gravityAttraction(){
+    if (!isGrounded() && !isFuseSpamSpace && !isGravityAttractioning){
+        clearInterval(smoothGravityAttraction)
+        isGravityAttractioning = true
+        velOfGravityAttractionIndex = 0
+        smoothGravityAttraction = setInterval(() => {
+            if (!isGrounded()){
+                ++velOfGravityAttractionIndex
+                if (Main.playerModel.scale.y > 0.5 && Main.playerModel.scale.y < 1){
+                    Main.playerModel.position.y -= 0.002 * velOfGravityAttractionIndex - Main.playerModel.geometry.parameters.depth / 75 
+                } else {
+                    Main.playerModel.position.y -= 0.002 * velOfGravityAttractionIndex
+                }
+            } else {
+                isGravityAttractioning = false
+                clearInterval(smoothGravityAttraction)
+            }
+        }, 5)
+    }
 }
