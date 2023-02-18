@@ -2,7 +2,7 @@ import * as THREE from 'three';
 // import { OBB } from 'three/examples/jsm/math/OBB'
 import * as Main from './main'
 
-export let cube: any
+export let cube: any, isFPScamera: boolean = false
 
 const euler = new THREE.Euler( 0, 0, 0, 'YXZ' );
 
@@ -19,11 +19,11 @@ let keys: any =
   "ShiftLeft": false
 }
 export function createCube(){
-  cube = new THREE.Mesh( new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({color: 'grey'}))
+  cube = new THREE.Mesh( new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color: 'grey'}))
   Main.scene.add( cube );
   cube.receiveShadow = true
   cube.castShadow = true
-  cube.position.set(0, 1, -5)
+  cube.position.set(0, 2, 0)
   cube.rotation.set(0, Math.PI/4, 0)
 }
 export function addGameControls(){
@@ -72,7 +72,16 @@ function sensetivityControls(event: any){
   euler.x -= movementY / (1 / sensitivity * 1000)
   euler.y -= movementX / (1 / sensitivity * 1000)
 
-  euler.x = Math.max(Math.min(Math.PI/2, euler.x), -Math.PI/2)
+  let max: number = 0, min: number = 0
+  if (isFPScamera){
+    max = -Math.PI/2
+    min = Math.PI/2
+  } else {
+    max = -Math.PI/3
+    min = Math.PI/6
+  }
+
+  euler.x = Math.max(Math.min(min, euler.x), max)
   Main.camera.quaternion.setFromEuler( euler );
 }
 function onKeyboard(event: any){
@@ -100,6 +109,9 @@ function onKeyboard(event: any){
           makeDuck()
         }
         break;
+      case 'KeyC':
+        isFPScamera = !isFPScamera
+        break;
     }
   }
 }
@@ -118,6 +130,12 @@ let makeMoveSmooth: any
 function playerMove(){
   if (!Main.playerModel.moving){
     makeMoveSmooth = setInterval(() => {
+      checkCollision()
+      Main.playerModel.prevPosition = {
+        x: Main.playerModel.position.x,
+        y: Main.playerModel.position.y,
+        z: Main.playerModel.position.z
+    }
       let speed = (keys.KeyW && keys.KeyA) || (keys.KeyW && keys.KeyD) || (keys.KeyS && keys.KeyA) || (keys.KeyS && keys.KeyD) ? maxSpeed/Math.sqrt(2) : maxSpeed
       if (keys.KeyW){
         Main.playerModel.position.x += Math.sin(Main.camera.rotation.y) * -speed
@@ -136,6 +154,9 @@ function playerMove(){
         Main.playerModel.position.z += -Math.cos(Main.camera.rotation.y - Math.PI / 2) * -speed
       }
         Main.playerModel.moving = true
+        if (!isGrounded()){
+          gravityAttraction()
+        }
     }, 5)
   }
 }
@@ -188,9 +209,8 @@ function makeJump(){
 }
 let smoothDucking: number | undefined
 function makeDuck(){
-  console.log(1)
   clearInterval(smoothDucking)
-  if (Main.playerModel.scale.y > 0.5){
+  if (keys.ControlLeft == true){
       smoothDucking = setInterval(() => {
           if (Main.playerModel.scale.y > 0.5){
               Main.playerModel.scale.y -=  1/50
@@ -232,4 +252,58 @@ function gravityAttraction(){
             }
         }, 5)
     }
+}
+function checkCollision(){
+  Main.playerModel.userData.obb.copy(Main.playerModel.geometry.userData.obb)
+  Main.playerModel.userData.obb.applyMatrix4(Main.playerModel.matrixWorld)
+  for (const obj of Main.collisionResponsiveObjects){
+      obj.userData.obb.copy(obj.geometry.userData.obb)
+      obj.userData.obb.applyMatrix4(obj.matrixWorld)
+      if (obj.geometry.type !== "SphereGeometry"){
+        if (obj.userData.obb.intersectsOBB(Main.playerModel.userData.obb)) {
+            let objectPosition
+            if (obj.geometry.boundingBox.max.x > obj.geometry.boundingBox.max.z){
+                objectPosition = {x: Main.playerModel.position.x, z: obj.position.z}
+            } else if (obj.geometry.boundingBox.max.x < obj.geometry.boundingBox.max.z){
+                objectPosition = {x: obj.position.x, z: Main.playerModel.position.z}
+            } else {
+                objectPosition = {x: obj.position.x, z: obj.position.z}
+            }
+            let xDiff = Math.abs(Main.playerModel.position.x - objectPosition.x)
+            let zDiff = Math.abs(Main.playerModel.position.z - objectPosition.z)
+            if (xDiff < zDiff){
+                if (Math.abs(Main.playerModel.position.z - obj.position.z) > Math.abs(Main.playerModel.prevPosition.z - obj.position.z)){
+                  Main.playerModel.position.set(Main.playerModel.position.x, Main.playerModel.position.y, Main.playerModel.position.z)
+                } else {
+                    Main.playerModel.position.set(Main.playerModel.position.x, Main.playerModel.position.y, Main.playerModel.prevPosition.z)
+                }
+            } else if (xDiff > zDiff) {
+                if (Math.abs(Main.playerModel.position.x - obj.position.x) > Math.abs(Main.playerModel.prevPosition.x - obj.position.x)){
+                    Main.playerModel.position.set(Main.playerModel.position.x, Main.playerModel.position.y, Main.playerModel.position.z)
+                } else {
+                    Main.playerModel.position.set(Main.playerModel.prevPosition.x, Main.playerModel.position.y, Main.playerModel.position.z)
+                }
+            } else {
+                Main.playerModel.position.set(Main.playerModel.prevPosition.x, Main.playerModel.position.y, Main.playerModel.prevPosition.z)
+            }
+        }
+      } else {
+        let distanceToObj = Math.sqrt(Math.pow(Main.playerModel.position.x - obj.position.x, 2) + Math.pow(Main.playerModel.position.y - obj.position.y, 2) + Math.pow(Main.playerModel.position.z - obj.position.z, 2))
+        // console.log(distanceToObj)
+        if (distanceToObj < obj.geometry.boundingSphere.radius){
+          console.log('DETECT')
+          let distanceToXObj = Math.sqrt(Math.pow(Main.playerModel.prevPosition.x - obj.position.x, 2) + Math.pow(Main.playerModel.position.y - obj.position.y, 2) + Math.pow(Main.playerModel.position.z - obj.position.z, 2))
+          if (distanceToXObj > obj.geometry.boundingSphere.radius){
+            Main.playerModel.position.x = Main.playerModel.prevPosition.x
+          } else {
+            let distanceToZObj = Math.sqrt(Math.pow(Main.playerModel.position.x - obj.position.x, 2) + Math.pow(Main.playerModel.position.y - obj.position.y, 2) + Math.pow(Main.playerModel.prevPosition.z - obj.position.z, 2))
+            if (distanceToZObj > obj.geometry.boundingSphere.radius){
+              Main.playerModel.position.z = Main.playerModel.prevPosition.z
+            } else {
+              Main.playerModel.position.set(Main.playerModel.prevPosition.x, Main.playerModel.position.y, Main.playerModel.prevPosition.z)
+            }
+          }
+        }
+      }
+  }
 }
